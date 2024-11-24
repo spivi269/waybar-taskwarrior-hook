@@ -1,0 +1,16 @@
+// -*- mode: json -*-
+// sample waybar config
+{
+	"modules-center": [
+		"custom/tasks",
+	],
+
+	"custom/tasks": {
+		"exec": "cat ~/.cache/waybar-tasks.json",
+		"interval": "once",
+		"return-type": "json",
+		"tooltip": true,
+		"signal": 8,
+		"on-click": "$TERMINAL -e taskwarrior-tui"
+	},
+}

@@ -1,11 +1,12 @@
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Local};
-use log::{error, info};
+use log::{error, info, warn};
+use procfs::process::{all_processes, Process};
 use serde::{Deserialize, Serialize};
 use simplelog::*;
 use std::{
     fs::{File, OpenOptions},
-    io::{prelude::*, BufReader, BufWriter, Write},
+    io::{BufWriter, Write},
     path::PathBuf,
     process::Command,
 };
@@ -69,24 +70,12 @@ fn setup_logging() -> Result<()> {
 
 fn run() -> Result<()> {
     const PROCESS_NAME: &str = "waybar";
-    const SIGNAL_NUMBER: i32 = 8;
+    const SIGNAL_OFFSET: i32 = 8;
 
-    if SIGNAL_NUMBER < 1 {
-        bail!(
-            "Trying to use SIGRTMIN + {}, but waybar only accepts signals >= SIGRTMIN+1",
-            SIGNAL_NUMBER
-        );
-    }
+    let signal_number = calculate_signal_number(SIGNAL_OFFSET)?;
 
     let cache_dir = get_cache_dir()?;
-
-    let pid_file_path = cache_dir.join("waybar.pid");
     let waybar_json_path = cache_dir.join("waybar-tasks.json");
-
-    let pid = get_pid_from_file(&pid_file_path)?;
-    validate_running_pid(pid, PROCESS_NAME)?;
-
-    info!("{} PID: {}", PROCESS_NAME, pid);
 
     let tasks = call_task_export()?;
     let waybar_output = generate_waybar_output(&tasks);
@@ -95,13 +84,20 @@ fn run() -> Result<()> {
     #[cfg(debug_assertions)]
     print_output(&waybar_output)?;
 
-    let _ = send_sigrtmin_plus_n(pid, SIGNAL_NUMBER).context("Failed to send signal")?;
+    let _ = send_sigrtmin_plus_n_to_processes_by_name(PROCESS_NAME, signal_number)
+        .context("Failed to send signals")?;
     Ok(())
 }
 
-fn send_sigrtmin_plus_n(pid_checked: i32, n: i32) -> Result<()> {
+fn calculate_signal_number(sig_offset: i32) -> Result<i32> {
+    if sig_offset < 1 {
+        bail!(
+            "Trying to use SIGRTMIN + {}, but waybar only accepts signals >= SIGRTMIN+1",
+            sig_offset
+        );
+    }
     let sigrtmax = libc::SIGRTMAX();
-    let sig_num = libc::SIGRTMIN() + n;
+    let sig_num = libc::SIGRTMIN() + sig_offset;
     if sig_num > sigrtmax {
         bail!(
             "Signal number to send ({}) is greater than SIGRTMAX {}",
@@ -109,19 +105,52 @@ fn send_sigrtmin_plus_n(pid_checked: i32, n: i32) -> Result<()> {
             sigrtmax
         );
     }
+    Ok(sig_num)
+}
 
-    info!(
-        "Sending signal {} (SIGRTMIN+{}) to PID {}",
-        sig_num, n, pid_checked
-    );
-    let result = unsafe { libc::kill(pid_checked, sig_num) };
+fn get_processes_by_name(name: &str) -> Result<Vec<Process>> {
+    all_processes()
+        .context("Failed to list processes from /proc")?
+        .filter_map(|process| match process {
+            Ok(proc) => match proc.stat() {
+                Ok(stat) if stat.comm == name => Some(Ok(proc)),
+                Ok(_) => None,
+                Err(e) if proc.stat().map(|s| s.comm == name).unwrap_or(false) => {
+                    // Log only if the process could have matched
+                    warn!(
+                        "Failed to retrieve status for PID {} (matching '{}'): {}",
+                        proc.pid(),
+                        name,
+                        e
+                    );
+                    Some(Err(e.into()))
+                }
+                Err(_) => None, // Ignore irrelevant processes
+            },
+            Err(_) => None, // Ignore errors unrelated to specific processes
+        })
+        .collect()
+}
+
+fn send_signal(pid: i32, sig_num: i32) -> Result<()> {
+    let result = unsafe { libc::kill(pid, sig_num) };
     if result != 0 {
-        bail!(
+        warn!(
             "Failed to send signal {} to PID {}: {}",
             sig_num,
-            pid_checked,
+            pid,
             std::io::Error::last_os_error()
         );
+    }
+    Ok(())
+}
+
+fn send_sigrtmin_plus_n_to_processes_by_name(process_name: &str, sig_num: i32) -> Result<()> {
+    for process in get_processes_by_name(process_name)? {
+        let pid = process.pid();
+        info!("Sending signal {} to PID {}", sig_num, pid);
+        send_signal(pid, sig_num)
+            .with_context(|| format!("Failed to send signal to PID {}", pid))?;
     }
     Ok(())
 }
@@ -145,48 +174,6 @@ fn write_waybar_json(output: &WaybarOutput, json_path: &PathBuf) -> Result<()> {
     info!("Json written to file");
 
     Ok(())
-}
-
-fn validate_running_pid(pid: i32, expected_name: &str) -> Result<()> {
-    let actual_name = procfs::process::Process::new(pid)
-        .with_context(|| format!("Failed to access process information for PID {}", pid))?
-        .stat()
-        .with_context(|| format!("Failed to retrieve process status for PID {}", pid))?
-        .comm;
-
-    if actual_name != expected_name {
-        bail!(
-            "PID {} does not match the expected process name '{}', found '{}'",
-            pid,
-            expected_name,
-            actual_name
-        );
-    }
-
-    Ok(())
-}
-
-fn get_pid_from_file(pid_file_path: &PathBuf) -> Result<i32> {
-    let file = File::open(&pid_file_path)
-        .with_context(|| format!("Failed to open PID file at {}", pid_file_path.display()))?;
-
-    let mut reader = BufReader::new(file);
-    let mut line = String::new();
-    reader.read_line(&mut line).with_context(|| {
-        format!(
-            "Failed to read from PID file at {}",
-            pid_file_path.display()
-        )
-    })?;
-
-    let pid = line.trim().parse::<i32>().with_context(|| {
-        format!(
-            "Failed to parse PID from file at {}",
-            pid_file_path.display()
-        )
-    })?;
-
-    Ok(pid)
 }
 
 fn call_task_export() -> Result<Vec<Task>> {

@@ -84,7 +84,7 @@ fn run() -> Result<()> {
     #[cfg(debug_assertions)]
     print_output(&waybar_output)?;
 
-    let _ = send_sigrtmin_plus_n_to_processes_by_name(PROCESS_NAME, signal_number)
+    send_sigrtmin_plus_n_to_processes_by_name(PROCESS_NAME, signal_number)
         .context("Failed to send signals")?;
     Ok(())
 }
@@ -160,7 +160,7 @@ fn write_waybar_json(output: &WaybarOutput, json_path: &PathBuf) -> Result<()> {
         .write(true)
         .create(true)
         .truncate(true)
-        .open(&json_path)
+        .open(json_path)
         .with_context(|| format!("Failed to open json file at {}", json_path.display()))?;
 
     info!("Opened file at {}", json_path.display());
@@ -182,7 +182,7 @@ fn call_task_export() -> Result<Vec<Task>> {
         .arg("status:pending")
         .arg("export")
         .output()
-        .with_context(|| format!("Failed to execute task export"))?;
+        .context("Failed to execute task export")?;
 
     let json_output = String::from_utf8_lossy(&output.stdout);
     let mut tasks: Vec<Task> = serde_json::from_str(&json_output)?;

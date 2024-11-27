@@ -226,7 +226,7 @@ impl Task {
         }
         if let Some(due) = &self.due {
             if let Ok(datetime) = parse_due_date(due) {
-                parts.push(format!("Due: {}", datetime.format("%y-%m-%d %H:%M")));
+                parts.push(format!("Due: {}", datetime.format("%a, %y-%m-%d %H:%M")));
             }
         }
         if let Some(urgency) = self.urgency {

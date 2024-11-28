@@ -16,7 +16,9 @@ git clone git@github.com:spivi269/waybar-taskwarrior-hook.git
 more sample-waybar-config.jsonc
 ```
 
-_Notice that you will need the `"signal": 8`, as the hook uses SIGRTMIN+8 to signal a change to waybar_
+> [!NOTE]
+>
+> Notice that you will need the `"signal": 8`, as the hook uses SIGRTMIN+8 to signal a change to waybar
 
 3. Build the hook:
 

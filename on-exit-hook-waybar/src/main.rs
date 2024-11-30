@@ -155,13 +155,31 @@ fn send_signal(pid: i32, sig_num: i32) -> Result<()> {
 }
 
 fn send_sigrtmin_plus_n_to_processes_by_name(process_name: &str, sig_num: i32) -> Result<()> {
-    for process in get_processes_by_name(process_name)? {
-        let pid = process.pid();
-        info!("Sending signal {} to PID {}", sig_num, pid);
-        send_signal(pid, sig_num)
-            .with_context(|| format!("Failed to send signal to PID {}", pid))?;
+    let processes = get_processes_by_name(process_name)?;
+    let processes_len = processes.len();
+
+    if processes_len == 0 {
+        bail!("No processes found to send signal to - bailing");
+    } else {
+        info!(
+            "Sending signal {} to {} {}",
+            sig_num,
+            processes_len,
+            if processes_len == 1 {
+                "process"
+            } else {
+                "processes"
+            }
+        );
     }
-    Ok(())
+
+    processes
+        .iter()
+        .map(|process| process.pid())
+        .try_for_each(|pid| {
+            info!("Sending to PID {}", pid);
+            send_signal(pid, sig_num).with_context(|| format!("Failed to send to PID {}", pid))
+        })
 }
 
 fn write_waybar_json(output: &WaybarOutput, json_path: &PathBuf) -> Result<()> {

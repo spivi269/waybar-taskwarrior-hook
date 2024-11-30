@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, Utc};
 use log::{error, info, warn};
 use procfs::process::{all_processes, Process};
 use serde::{Deserialize, Serialize};
@@ -61,10 +61,18 @@ fn setup_logging() -> Result<()> {
             })?,
         ),
     ])?;
+
+    let time_zone = if Utc::now().timestamp() == Local::now().timestamp() {
+        "UTC"
+    } else {
+        "Local Time"
+    };
+
     info!(
         "Logging initialized, writing to {}",
         log_file_path.display()
     );
+    info!("Log file time zone: {}", time_zone);
     Ok(())
 }
 

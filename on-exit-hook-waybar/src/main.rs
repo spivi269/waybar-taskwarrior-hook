@@ -94,6 +94,7 @@ fn run() -> Result<()> {
 
     send_sigrtmin_plus_n_to_processes_by_name(PROCESS_NAME, signal_number)
         .context("Error encountered while sending signals")?;
+    info!("Success sending");
     Ok(())
 }
 

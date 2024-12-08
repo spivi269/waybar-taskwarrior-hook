@@ -102,3 +102,53 @@ pub fn send_signal_to_processes_by_name(
     Ok(())
 }
 
+/**************
+ * Unit tests *
+ **************/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_signal_number_valid() {
+        let result = calculate_signal_number(8);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), libc::SIGRTMIN() + 8)
+    }
+
+    #[test]
+    fn test_calculate_signal_number_below_min() {
+        let result = calculate_signal_number(0);
+        assert!(matches!(
+            result,
+            Err(InvalidRTSignalError::BelowMinError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_calculate_signal_number_negative_offset() {
+        let result = calculate_signal_number(-500);
+        assert!(matches!(
+            result,
+            Err(InvalidRTSignalError::BelowMinError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_calculate_signal_number_above_max() {
+        let result = calculate_signal_number(50);
+        assert!(matches!(
+            result,
+            Err(InvalidRTSignalError::AboveMaxError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_retrieve_valid_processes() {
+        let procs = get_processes_by_name("cargo");
+        assert!(procs.is_ok());
+        let procs = procs.unwrap();
+        assert!(!procs.is_empty());
+    }
+}

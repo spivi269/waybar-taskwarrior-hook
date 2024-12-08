@@ -312,3 +312,57 @@ fn print_output(output: &WaybarOutput) -> Result<(), serde_json::Error> {
     println!("{}", json_output);
     Ok(())
 }
+
+/**************
+ * Unit tests *
+ * ***********/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_signal_number_valid() {
+        let result = calculate_signal_number(8);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), libc::SIGRTMIN() + 8)
+    }
+
+    #[test]
+    fn test_calculate_signal_number_below_min() {
+        let result = calculate_signal_number(0);
+        assert!(matches!(
+            result,
+            Err(InvalidRTSignalError::BelowMinError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_calculate_signal_number_negative_offset() {
+        let result = calculate_signal_number(-500);
+        assert!(matches!(
+            result,
+            Err(InvalidRTSignalError::BelowMinError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_calculate_signal_number_above_max() {
+        let result = calculate_signal_number(50);
+        assert!(matches!(
+            result,
+            Err(InvalidRTSignalError::AboveMaxError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_parse_due_date_valid() {
+        let due = "20241206T143002Z";
+        let result = parse_due_date(due);
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap().format("%Y-%m-%d %H:%M:%S").to_string(),
+            "2024-12-06 15:30:02"
+        );
+    }
+}

@@ -361,8 +361,8 @@ mod tests {
         let result = parse_due_date(due);
         assert!(result.is_ok());
         assert_eq!(
-            result.unwrap().format("%Y-%m-%d %H:%M:%S").to_string(),
-            "2024-12-06 15:30:02"
+            result.unwrap().format("%a, %y-%m-%d %H:%M").to_string(),
+            "Fri, 24-12-06 15:30"
         );
     }
 }

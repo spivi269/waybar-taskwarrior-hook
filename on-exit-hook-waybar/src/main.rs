@@ -1,4 +1,3 @@
-use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Local, Utc};
 use log::{error, info, warn};
 use procfs::process::{all_processes, Process};
@@ -10,6 +9,31 @@ use std::{
     path::PathBuf,
     process::Command,
 };
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum TaskHookWaybarError {
+    #[error("Failed to determine cache directory")]
+    SetLoggerError(#[from] log::SetLoggerError),
+    #[error("File error: {0}")]
+    FileError(#[from] std::io::Error),
+    #[error("Error: No processes found")]
+    ProcessNotFoundError,
+    #[error("Process error: {0}")]
+    ProcError(#[from] procfs::ProcError),
+    #[error("Signal out of bounds: {0}")]
+    InvalidRTSignalError(#[from] InvalidRTSignalError),
+    #[error("Json processing error: {0}")]
+    JsonError(#[from] serde_json::Error),
+}
+
+#[derive(Error, Debug)]
+pub enum InvalidRTSignalError {
+    #[error("Signal below minimum: {context}")]
+    BelowMinError { context: String },
+    #[error("Signal above maximum: {context}")]
+    AboveMaxError { context: String },
+}
 
 #[derive(Serialize)]
 struct WaybarOutput {
@@ -26,12 +50,17 @@ struct Task {
 }
 
 fn main() {
-    if let Err(e) = setup_logging() {
+    let cache_dir = dirs::cache_dir().unwrap_or_else(|| {
+        eprintln!("Failed to determine cache directory");
+        std::process::exit(1)
+    });
+
+    if let Err(e) = setup_logging(&cache_dir.join("waybar-task-hook.log")) {
         eprintln!("Failed to initialize logging: {}", e);
         std::process::exit(1);
     }
 
-    if let Err(e) = run() {
+    if let Err(e) = run(&cache_dir.join("waybar-tasks.json")) {
         error!("{:?}", e);
         eprintln!("{:?}", e);
         std::process::exit(1);
@@ -40,12 +69,7 @@ fn main() {
     info!("Export done")
 }
 
-fn get_cache_dir() -> Result<PathBuf> {
-    dirs::cache_dir().context("Could not determine cache directory")
-}
-
-fn setup_logging() -> Result<()> {
-    let log_file_path = get_cache_dir()?.join("waybar-task-hook.log");
+fn setup_logging(log_file_path: &PathBuf) -> Result<(), TaskHookWaybarError> {
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Error,
@@ -56,9 +80,7 @@ fn setup_logging() -> Result<()> {
         WriteLogger::new(
             LevelFilter::Info,
             Config::default(),
-            File::create(&log_file_path).with_context(|| {
-                format!("Could not create log file at {}", log_file_path.display())
-            })?,
+            File::create(log_file_path)?,
         ),
     ])?;
 
@@ -76,50 +98,52 @@ fn setup_logging() -> Result<()> {
     Ok(())
 }
 
-fn run() -> Result<()> {
+fn run(waybar_json_path: &PathBuf) -> Result<(), TaskHookWaybarError> {
     const PROCESS_NAME: &str = "waybar";
     const SIGNAL_OFFSET: i32 = 8;
 
     let signal_number = calculate_signal_number(SIGNAL_OFFSET)?;
 
-    let cache_dir = get_cache_dir()?;
-    let waybar_json_path = cache_dir.join("waybar-tasks.json");
-
     let tasks = call_task_export()?;
     let waybar_output = generate_waybar_output(&tasks);
-    write_waybar_json(&waybar_output, &waybar_json_path)?;
+    write_waybar_json(&waybar_output, waybar_json_path)?;
 
     #[cfg(debug_assertions)]
     print_output(&waybar_output)?;
 
-    send_sigrtmin_plus_n_to_processes_by_name(PROCESS_NAME, signal_number)
-        .context("Error encountered while sending signals")?;
+    send_sigrtmin_plus_n_to_processes_by_name(PROCESS_NAME, signal_number)?;
     info!("Success sending");
     Ok(())
 }
 
-fn calculate_signal_number(sig_offset: i32) -> Result<i32> {
+fn calculate_signal_number(sig_offset: i32) -> Result<i32, InvalidRTSignalError> {
     if sig_offset < 1 {
-        bail!(
-            "Trying to use SIGRTMIN + {}, but waybar only accepts signals >= SIGRTMIN+1",
-            sig_offset
-        );
+        return Err(InvalidRTSignalError::BelowMinError {
+            context: format!(
+                "Signal SIGRTMIN+{} is too low. Waybar only accepts signals >= SIGRTMIN+1",
+                sig_offset
+            ),
+        });
     }
     let sigrtmax = libc::SIGRTMAX();
     let sig_num = libc::SIGRTMIN() + sig_offset;
     if sig_num > sigrtmax {
-        bail!(
-            "Signal number to send ({}) is greater than SIGRTMAX {}",
-            sig_num,
-            sigrtmax
-        );
+        return Err(InvalidRTSignalError::AboveMaxError {
+            context: format!(
+                "Signal SIGRTMIN+{} ({} + {} = {}) is greater than SIGRTMAX ({})",
+                sig_offset,
+                libc::SIGRTMIN(),
+                sig_offset,
+                sig_num,
+                sigrtmax
+            ),
+        });
     }
     Ok(sig_num)
 }
 
-fn get_processes_by_name(name: &str) -> Result<Vec<Process>> {
-    all_processes()
-        .context("Failed to list processes from /proc")?
+fn get_processes_by_name(name: &str) -> Result<Vec<Process>, TaskHookWaybarError> {
+    all_processes()?
         .filter_map(|process| match process {
             Ok(proc) => match proc.stat() {
                 Ok(stat) if stat.comm == name => Some(Ok(proc)),
@@ -141,7 +165,7 @@ fn get_processes_by_name(name: &str) -> Result<Vec<Process>> {
         .collect()
 }
 
-fn send_signal(pid: i32, sig_num: i32) -> Result<()> {
+fn send_signal(pid: i32, sig_num: i32) {
     let result = unsafe { libc::kill(pid, sig_num) };
     if result != 0 {
         warn!(
@@ -151,15 +175,17 @@ fn send_signal(pid: i32, sig_num: i32) -> Result<()> {
             std::io::Error::last_os_error()
         );
     }
-    Ok(())
 }
 
-fn send_sigrtmin_plus_n_to_processes_by_name(process_name: &str, sig_num: i32) -> Result<()> {
+fn send_sigrtmin_plus_n_to_processes_by_name(
+    process_name: &str,
+    sig_num: i32,
+) -> Result<(), TaskHookWaybarError> {
     let processes = get_processes_by_name(process_name)?;
     let processes_len = processes.len();
 
     if processes_len == 0 {
-        bail!("No processes found to send signal to - bailing");
+        return Err(TaskHookWaybarError::ProcessNotFoundError);
     } else {
         info!(
             "Sending signal {} to {} {}",
@@ -176,40 +202,41 @@ fn send_sigrtmin_plus_n_to_processes_by_name(process_name: &str, sig_num: i32) -
     processes
         .iter()
         .map(|process| process.pid())
-        .try_for_each(|pid| {
+        .for_each(|pid| {
             info!("Sending to PID {}", pid);
-            send_signal(pid, sig_num).with_context(|| format!("Failed to send to PID {}", pid))
-        })
+            send_signal(pid, sig_num);
+        });
+    Ok(())
 }
 
-fn write_waybar_json(output: &WaybarOutput, json_path: &PathBuf) -> Result<()> {
+fn write_waybar_json(
+    output: &WaybarOutput,
+    json_path: &PathBuf,
+) -> Result<(), TaskHookWaybarError> {
     let file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
-        .open(json_path)
-        .with_context(|| format!("Failed to open json file at {}", json_path.display()))?;
+        .open(json_path)?;
 
     info!("Opened file at {}", json_path.display());
 
     let mut writer = BufWriter::new(file);
     let json_output = serde_json::to_string(output)?;
 
-    writeln!(writer, "{}", json_output)
-        .with_context(|| format!("Error writing to file {}", json_path.display()))?;
+    writeln!(writer, "{}", json_output)?;
 
     info!("Json written to file");
 
     Ok(())
 }
 
-fn call_task_export() -> Result<Vec<Task>> {
+fn call_task_export() -> Result<Vec<Task>, TaskHookWaybarError> {
     let output = Command::new("task")
         .arg("rc.hooks:off")
         .arg("status:pending")
         .arg("export")
-        .output()
-        .context("Failed to execute task export")?;
+        .output()?;
 
     let json_output = String::from_utf8_lossy(&output.stdout);
     let mut tasks: Vec<Task> = serde_json::from_str(&json_output)?;
@@ -264,7 +291,7 @@ impl Task {
     }
 }
 
-fn parse_due_date(due: &str) -> Result<DateTime<Local>> {
+fn parse_due_date(due: &str) -> Result<DateTime<Local>, chrono::ParseError> {
     let due_formatted = format!(
         "{}-{}-{}T{}:{}:{}+00:00",
         &due[0..4],   // Year
@@ -280,7 +307,7 @@ fn parse_due_date(due: &str) -> Result<DateTime<Local>> {
 }
 
 #[cfg(debug_assertions)]
-fn print_output(output: &WaybarOutput) -> Result<()> {
+fn print_output(output: &WaybarOutput) -> Result<(), serde_json::Error> {
     let json_output = serde_json::to_string_pretty(output)?;
     println!("{}", json_output);
     Ok(())

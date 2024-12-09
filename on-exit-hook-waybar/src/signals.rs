@@ -29,26 +29,10 @@ fn calculate_signal_number(sig_offset: i32) -> Result<i32, InvalidRTSignalError>
 }
 
 fn get_processes_by_name(name: &str) -> Result<Vec<Process>, TaskHookWaybarError> {
-    all_processes()?
-        .filter_map(|process| match process {
-            Ok(proc) => match proc.stat() {
-                Ok(stat) if stat.comm == name => Some(Ok(proc)),
-                Ok(_) => None,
-                Err(e) if proc.stat().map(|s| s.comm == name).unwrap_or(false) => {
-                    // Log only if the process could have matched
-                    warn!(
-                        "Failed to retrieve status for PID {} (matching '{}'): {}",
-                        proc.pid(),
-                        name,
-                        e
-                    );
-                    Some(Err(e.into()))
-                }
-                Err(_) => None, // Ignore irrelevant processes
-            },
-            Err(_) => None, // Ignore errors unrelated to specific processes
-        })
-        .collect()
+    Ok(all_processes()?
+        .filter_map(Result::ok)
+        .filter(|p| p.stat().is_ok_and(|s| s.comm == name))
+        .collect())
 }
 
 fn send_signal(pid: i32, sig_num: i32) {

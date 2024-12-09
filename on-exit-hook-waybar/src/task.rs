@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
 };
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, PartialEq)]
 pub struct WaybarOutput {
     text: String,
     tooltip: String,
@@ -131,5 +131,62 @@ pub mod debug {
         let json_output = serde_json::to_string_pretty(output)?;
         println!("{}", json_output);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_due_date_valid() {
+        let due = "20241206T143002Z";
+        let result = parse_due_date(due);
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap().format("%a, %y-%m-%d %H:%M").to_string(),
+            "Fri, 24-12-06 15:30"
+        );
+    }
+
+    #[test]
+    fn test_generate_valid_waybar_output() {
+        let waybar_output = generate_waybar_output(&[
+            Task {
+                id: 1,
+                description: Some("Test1".to_string()),
+                priority: Some("H".to_string()),
+                due: Some("20241206T143002Z".to_string()),
+                urgency: Some(42.0),
+            },
+            Task {
+                id: 2,
+                description: Some("Test2".to_string()),
+                priority: Some("M".to_string()),
+                due: Some("20241206T173002Z".to_string()),
+                urgency: Some(5.0),
+            },
+        ]);
+
+        assert_eq!(
+            waybar_output,
+            WaybarOutput {
+                text: "1 Test1, Prio: H, Due: Fri, 24-12-06 15:30, Urgency: 42.00".to_string(),
+                tooltip: "1 Test1, Prio: H, Due: Fri, 24-12-06 15:30, Urgency: 42.00\n2 Test2, Prio: M, Due: Fri, 24-12-06 18:30, Urgency: 5.00".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_generate_empty_tasks_waybar_output() {
+        let waybar_output = generate_waybar_output(&[]);
+
+        assert_eq!(
+            waybar_output,
+            WaybarOutput {
+                text: "No tasks.".to_string(),
+                tooltip: "No tasks.".to_string()
+            }
+        );
     }
 }

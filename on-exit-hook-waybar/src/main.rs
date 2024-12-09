@@ -45,16 +45,3 @@ fn run(waybar_json_path: &PathBuf) -> Result<(), TaskHookWaybarError> {
     info!("Success sending");
     Ok(())
 }
-
-//
-//     #[test]
-//     fn test_parse_due_date_valid() {
-//         let due = "20241206T143002Z";
-//         let result = parse_due_date(due);
-//         assert!(result.is_ok());
-//         assert_eq!(
-//             result.unwrap().format("%a, %y-%m-%d %H:%M").to_string(),
-//             "Fri, 24-12-06 15:30"
-//         );
-//     }
-// }

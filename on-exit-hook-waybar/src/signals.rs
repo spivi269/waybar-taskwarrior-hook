@@ -132,7 +132,20 @@ mod tests {
     fn test_retrieve_valid_processes() {
         let procs = get_processes_by_name("cargo");
         assert!(procs.is_ok());
+
         let procs = procs.unwrap();
         assert!(!procs.is_empty());
+
+        let pids: Vec<i32> = procs.iter().map(|p| p.pid()).collect();
+
+        let procs_for_pids: Vec<Process> = all_processes()
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|p| pids.contains(&p.pid()))
+            .collect();
+
+        assert!(procs_for_pids
+            .iter()
+            .all(|p| p.stat().unwrap().comm == "cargo"));
     }
 }

@@ -17,6 +17,7 @@ pub struct WaybarOutput {
 
 #[derive(Deserialize)]
 struct Task {
+    id: u32,
     description: Option<String>,
     priority: Option<String>,
     due: Option<String>,
@@ -42,7 +43,7 @@ impl Task {
             parts.push(format!("Urgency: {:.2}", urgency));
         }
 
-        parts.join(", ")
+        [self.id.to_string(), parts.join(", ")].join(" ")
     }
 }
 

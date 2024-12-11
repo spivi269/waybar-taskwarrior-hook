@@ -20,17 +20,18 @@ more sample-waybar-config.jsonc
 >
 > Notice that you will need the `"signal": 8`, as the hook uses SIGRTMIN+8 to signal a change to waybar
 
-3. Build the hook:
+3. Build and install the hook:
+
+If using the default location for task config (~/.task/hooks/):
 
 ```
-cd on-exit-hook-waybar/
-cargo build --release
+make install
 ```
 
-4. Move the program to your task's hooks directory:
+If you changed the default path to something else you can do:
 
 ```
-mv target/release/on-exit-hook-waybar ~/.task/hooks/
+make install TARGET_DIR=/your/custom/directory
 ```
 
 The hook sends SIGRTMIN+8 to all waybar instances to update.

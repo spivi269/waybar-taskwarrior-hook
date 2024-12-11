@@ -26,22 +26,19 @@ struct Task {
 
 impl Task {
     fn construct_task_output(&self) -> String {
-        let mut parts = Vec::new();
-
-        if let Some(description) = &self.description {
-            parts.push(description.clone());
-        }
-        if let Some(priority) = &self.priority {
-            parts.push(format!("Prio: {}", priority));
-        }
-        if let Some(due) = &self.due {
-            if let Ok(datetime) = parse_due_date(due) {
-                parts.push(format!("Due: {}", datetime.format("%a, %y-%m-%d %H:%M")));
-            }
-        }
-        if let Some(urgency) = self.urgency {
-            parts.push(format!("Urgency: {:.2}", urgency));
-        }
+        let parts: Vec<_> = [
+            self.description.as_deref().map(String::from),
+            self.priority.as_ref().map(|p| format!("Prio: {}", p)),
+            self.due.as_ref().and_then(|d| {
+                parse_due_date(d)
+                    .ok()
+                    .map(|datetime| format!("Due: {}", datetime.format("%a, %y-%m-%d %H:%M")))
+            }),
+            self.urgency.map(|u| format!("Urgency: {:.2}", u)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
 
         [self.id.to_string(), parts.join(", ")].join(" ")
     }

@@ -149,6 +149,7 @@ pub mod debug {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     #[test]
     fn test_parse_due_date_valid() {
@@ -156,8 +157,12 @@ pub mod tests {
         let result = parse_due_date(due);
         assert!(result.is_ok());
         assert_eq!(
-            result.unwrap().format("%a, %y-%m-%d %H:%M").to_string(),
-            "Fri, 24-12-06 15:30"
+            result
+                .unwrap()
+                .with_timezone(&chrono::Utc)
+                .format("%a, %y-%m-%d %H:%M")
+                .to_string(),
+            "Fri, 24-12-06 14:30"
         );
     }
 
@@ -180,11 +185,31 @@ pub mod tests {
             },
         ]);
 
+        let expected_due1 =
+            chrono::NaiveDateTime::parse_from_str("20241206T143002Z", "%Y%m%dT%H%M%SZ")
+                .map(|ndt| chrono::Local.from_utc_datetime(&ndt))
+                .unwrap()
+                .format("%a, %y-%m-%d %H:%M")
+                .to_string();
+
+        let expected_due2 =
+            chrono::NaiveDateTime::parse_from_str("20241206T173002Z", "%Y%m%dT%H%M%SZ")
+                .map(|ndt| chrono::Local.from_utc_datetime(&ndt))
+                .unwrap()
+                .format("%a, %y-%m-%d %H:%M")
+                .to_string();
+
+        let expected_text = format!("1 Test1, Prio: H, Due: {}, Urgency: 42.00", expected_due1);
+
+        let expected_tooltip = format!(
+            "1 Test1, Prio: H, Due: {}, Urgency: 42.00\n2 Test2, Prio: M, Due: {}, Urgency: 5.00",
+            expected_due1, expected_due2
+        );
         assert_eq!(
             waybar_output,
             WaybarOutput {
-                text: "1 Test1, Prio: H, Due: Fri, 24-12-06 15:30, Urgency: 42.00".to_string(),
-                tooltip: "1 Test1, Prio: H, Due: Fri, 24-12-06 15:30, Urgency: 42.00\n2 Test2, Prio: M, Due: Fri, 24-12-06 18:30, Urgency: 5.00".to_string()
+                text: expected_text,
+                tooltip: expected_tooltip,
             }
         );
     }

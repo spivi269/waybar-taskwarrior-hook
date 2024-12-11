@@ -57,12 +57,26 @@ fn call_task_export() -> Result<Vec<Task>, TaskHookWaybarError> {
 
     let json_output = String::from_utf8_lossy(&output.stdout);
     let mut tasks: Vec<Task> = serde_json::from_str(&json_output)?;
-    tasks.sort_by(|a, b| {
+
+    sort_tasks(&mut tasks);
+
+    Ok(tasks)
+}
+
+fn sort_tasks(tasks: &mut [Task]) -> &mut [Task] {
+    tasks.sort_unstable_by(|a, b| {
         b.urgency
             .partial_cmp(&a.urgency)
-            .unwrap_or(std::cmp::Ordering::Less)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| compare_optional_timestamps(a.due.as_deref(), b.due.as_deref()))
+            .then_with(|| a.id.cmp(&b.id))
     });
-    Ok(tasks)
+    tasks
+}
+
+fn compare_optional_timestamps(a: Option<&str>, b: Option<&str>) -> std::cmp::Ordering {
+    a.and_then(|s| parse_due_date(s).ok())
+        .cmp(&b.and_then(|s| parse_due_date(s).ok()))
 }
 
 fn generate_waybar_output(tasks: &[Task]) -> WaybarOutput {

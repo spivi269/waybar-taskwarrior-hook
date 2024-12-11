@@ -15,7 +15,7 @@ pub struct WaybarOutput {
     tooltip: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, PartialEq)]
 struct Task {
     id: u32,
     description: Option<String>,
@@ -200,5 +200,102 @@ pub mod tests {
                 tooltip: "No tasks.".to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_sort_tasks() {
+        let mut tasks = vec![
+            Task {
+                id: 1,
+                description: Some("First task".to_string()),
+                priority: Some("H".to_string()),
+                due: Some("20241206T143002Z".to_string()),
+                urgency: Some(3.0),
+            },
+            Task {
+                id: 2,
+                description: Some("Second task".to_string()),
+                priority: Some("M".to_string()),
+                due: Some("20241205T143002Z".to_string()),
+                urgency: Some(5.0),
+            },
+            Task {
+                id: 3,
+                description: Some("Third task".to_string()),
+                priority: Some("L".to_string()),
+                due: Some("20241207T143002Z".to_string()),
+                urgency: None,
+            },
+            Task {
+                id: 4,
+                description: Some("Fourth task".to_string()),
+                priority: None,
+                due: None,
+                urgency: Some(2.0),
+            },
+            Task {
+                id: 5,
+                description: Some("Fifth task".to_string()),
+                priority: None,
+                due: Some("20231205T143002Z".to_string()),
+                urgency: Some(5.0),
+            },
+            Task {
+                id: 6,
+                description: Some("Sixth task".to_string()),
+                priority: None,
+                due: Some("20231205T143002Z".to_string()),
+                urgency: Some(5.0),
+            },
+        ];
+
+        sort_tasks(&mut tasks);
+
+        let expected = vec![
+            Task {
+                id: 5,
+                description: Some("Fifth task".to_string()),
+                priority: None,
+                due: Some("20231205T143002Z".to_string()),
+                urgency: Some(5.0),
+            },
+            Task {
+                id: 6,
+                description: Some("Sixth task".to_string()),
+                priority: None,
+                due: Some("20231205T143002Z".to_string()),
+                urgency: Some(5.0),
+            },
+            Task {
+                id: 2,
+                description: Some("Second task".to_string()),
+                priority: Some("M".to_string()),
+                due: Some("20241205T143002Z".to_string()),
+                urgency: Some(5.0),
+            },
+            Task {
+                id: 1,
+                description: Some("First task".to_string()),
+                priority: Some("H".to_string()),
+                due: Some("20241206T143002Z".to_string()),
+                urgency: Some(3.0),
+            },
+            Task {
+                id: 4,
+                description: Some("Fourth task".to_string()),
+                priority: None,
+                due: None,
+                urgency: Some(2.0),
+            },
+            Task {
+                id: 3,
+                description: Some("Third task".to_string()),
+                priority: Some("L".to_string()),
+                due: Some("20241207T143002Z".to_string()),
+                urgency: None,
+            },
+        ];
+
+        assert_eq!(tasks, expected);
     }
 }
